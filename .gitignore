@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments
+env/
+venv/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# VSCode/JetBrains IDE settings
+.vscode/
+.idea/
+
+# Data folders (optional, if large)
+PlantVillage/
+1/
+model_checkpoints/
+
+# TensorFlow/Keras model files
+*.h5
+*.keras
+*.tflite
+*.pb
+*.ckpt
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Git itself
+.git/
+
+# Ignore environment variables
+.env
+*.env
