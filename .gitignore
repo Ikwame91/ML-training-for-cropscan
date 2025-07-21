@@ -10,14 +10,14 @@ venv/
 # Jupyter notebook checkpoints
 .ipynb_checkpoints/
 
-# VSCode/JetBrains IDE settings
+# IDE settings
 .vscode/
 .idea/
 
 # Data folders (optional, if large)
 PlantVillage/
-1/
 model_checkpoints/
+temp_data/  # replace ambiguous "1/" with something meaningful
 
 # TensorFlow/Keras model files
 *.h5
@@ -26,6 +26,9 @@ model_checkpoints/
 *.pb
 *.ckpt
 
+# Keep specific model file if needed
+!converted_model.tflite
+
 # System files
 .DS_Store
 Thumbs.db
@@ -33,9 +36,11 @@ Thumbs.db
 # Logs
 *.log
 
-# Git itself
-.git/
-
 # Ignore environment variables
 .env
 *.env
+
+# Build artifacts (optional)
+build/
+dist/
+*.egg-info/
