@@ -1,0 +1,485 @@
+--- Cell 1 (Code) ---
+
+import tensorflow as tf
+import os
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, CSVLogger
+from tensorflow.keras import models, layers
+import matplotlib.pyplot as plt
+import numpy as np 
+from IPython.display import HTML
+
+
+
+--- Cell 2 (Code) ---
+
+BATCH_SIZE = 32
+IMAGE_SIZE = 256
+CHANNELS = 3
+EPOCHS = 50
+
+
+
+--- Cell 3 (Code) ---
+
+dataset = tf.keras.preprocessing.image_dataset_from_directory(
+    "PlantVillage",
+    batch_size= BATCH_SIZE,
+    image_size= (IMAGE_SIZE, IMAGE_SIZE),
+    shuffle=True,
+   
+)
+
+
+
+--- Cell 4 (Code) ---
+
+print(f"Found {tf.data.experimental.cardinality(dataset).numpy() * BATCH_SIZE} files belonging to {len(dataset.class_names)} classes.")
+
+
+
+--- Cell 5 (Code) ---
+
+class_names = dataset.class_names
+print("Class Names:", class_names)
+
+
+
+--- Cell 6 (Code) ---
+
+class_names = dataset.class_names
+print(class_names)
+
+
+
+--- Cell 7 (Code) ---
+
+input_shape = (BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, CHANNELS)
+n_classes = len(class_names)
+
+
+
+--- Cell 8 (Code) ---
+
+plt.figure(figsize= (10,10))
+for image_batch,label_batch in dataset.take(1):
+    for i in range(12):   
+        ax = plt.subplot(3,4,i+1)
+        plt.imshow(image_batch[i].numpy().astype("uint8"))
+        plt.title(class_names[label_batch[i]])
+        plt.axis("off")
+
+
+
+--- Cell 9 (Code) ---
+
+def get_dataset_partitions_tf(ds, train_split=0.8, val_split=0.1, test_split=0.1, shuffle=True, shuffle_size=10000):
+    assert (train_split + test_split + val_split) == 1
+
+    ds_size = len(ds)
+
+    if shuffle:
+        ds = ds.shuffle(shuffle_size, seed=12)
+
+    train_size = int(train_split * ds_size)
+    val_size = int(val_split * ds_size)
+
+    train_ds = ds.take(train_size)
+    val_ds = ds.skip(train_size).take(val_size)
+    test_ds = ds.skip(train_size).skip(val_size)
+
+    return train_ds, val_ds, test_ds
+
+
+
+--- Cell 10 (Code) ---
+
+# Apply the splitting function
+train_ds, val_ds, test_ds = get_dataset_partitions_tf(dataset)
+
+
+
+--- Cell 11 (Code) ---
+
+print(f"Number of training batches: {len(train_ds)}")
+print(f"Number of validation batches: {len(val_ds)}")
+print(f"Number of test batches: {len(test_ds)}")
+
+
+
+--- Cell 12 (Code) ---
+
+train_ds = train_ds.cache().shuffle(1000).prefetch(buffer_size=tf.data.AUTOTUNE)
+val_ds = val_ds.cache().shuffle(1000).prefetch(buffer_size=tf.data.AUTOTUNE)
+test_ds = test_ds.cache().shuffle(1000).prefetch(buffer_size=tf.data.AUTOTUNE)
+
+
+
+--- Cell 13 (Code) ---
+
+# Creating a Layer for Resizing and Normalization
+# This layer ensures all images are resized to IMAGE_SIZE x IMAGE_SIZE and pixel values are scaled to 0-1.
+resize_and_rescale = tf.keras.Sequential([
+  layers.Resizing(IMAGE_SIZE, IMAGE_SIZE), # Changed from layers.experimental.preprocessing.Resizing
+  layers.Rescaling(1./255)
+])
+
+
+
+--- Cell 14 (Code) ---
+
+data_augmentation = tf.keras.Sequential([
+  layers.RandomFlip("horizontal_and_vertical"), # Randomly flips images horizontally or vertically
+  layers.RandomRotation(0.2), # Randomly rotates images by up to 20%
+])
+
+
+
+--- Cell 15 (Code) ---
+
+train_ds = train_ds.map(
+    lambda x, y: (data_augmentation(x, training=True), y)
+).prefetch(buffer_size=tf.data.AUTOTUNE)
+
+
+
+--- Cell 16 (Code) ---
+
+input_shape = (BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, CHANNELS)
+n_classes = len(class_names) # Dynamically set the number of output classes
+
+
+
+--- Cell 17 (Code) ---
+
+model = models.Sequential([
+    resize_and_rescale, # First, resize and rescale the input images
+
+    # Optional: If you want data augmentation to be part of the model's graph
+    # and applied during inference (which is usually NOT what you want for production),
+    # you could include data_augmentation here:
+    # data_augmentation,
+
+    # Convolutional layers with MaxPooling for feature extraction
+    layers.Conv2D(32, kernel_size=(3, 3), activation='relu', input_shape=input_shape),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, kernel_size=(3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, kernel_size=(3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, (3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, (3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+    layers.Conv2D(64, (3, 3), activation='relu'),
+    layers.MaxPooling2D((2, 2)),
+
+    layers.Flatten(), # Flatten the 3D output of the convolutional layers into a 1D vector
+    layers.Dense(64, activation='relu'), # A densely connected (fully connected) layer
+    layers.Dense(n_classes, activation='softmax'), # Output layer with n_classes neurons and softmax for classification
+])
+
+
+model.summary()
+
+
+
+--- Cell 18 (Code) ---
+
+model.compile(
+    optimizer='adam',
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False), # from_logits=False because we use softmax activation
+    metrics=['accuracy']
+)
+
+
+
+--- Cell 19 (Code) ---
+
+checkpoint_dir = "C:/projects/final_year_project/model_checkpoints"
+os.makedirs(checkpoint_dir, exist_ok = True)
+
+
+
+--- Cell 20 (Code) ---
+
+model_checkpoint_callback = ModelCheckpoint(
+    filepath=os.path.join(checkpoint_dir, 'best_model_val_acc_{val_accuracy:.4f}_epoch_{epoch:02d}.keras'),
+    monitor='val_accuracy',
+    save_best_only=True,
+    save_weights_only=False,
+    mode='max',
+    verbose=1
+)
+
+
+
+--- Cell 21 (Code) ---
+
+early_stopping_callback = EarlyStopping(
+    monitor='val_accuracy',
+    patience=10,
+    restore_best_weights=True,
+    verbose=1
+)
+
+
+
+--- Cell 22 (Code) ---
+
+reduce_lr_callback = ReduceLROnPlateau(
+    monitor='val_accuracy',
+    factor=0.2,
+    patience=5,
+    min_lr=0.00001,
+    verbose=1
+)
+
+
+
+--- Cell 23 (Code) ---
+
+csv_logger_callback = CSVLogger(os.path.join(checkpoint_dir, 'training_log.csv'), append=True)
+
+
+
+--- Cell 24 (Code) ---
+
+latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+if latest_checkpoint:
+    model.load_weights(latest_checkpoint)
+    initial_epoch = int(latest_checkpoint.split('_epoch_')[1].split('.')[0])
+    print(f"Resuming training from epoch {initial_epoch}")
+else:
+    initial_epoch = 0
+    print("Starting training from scratch")
+
+
+
+--- Cell 25 (Code) ---
+
+print("\nStarting optimized model training...")
+history = model.fit(
+    train_ds,
+    batch_size=BATCH_SIZE,
+    validation_data=val_ds,
+    verbose=1,
+    epochs=EPOCHS,
+    initial_epoch=initial_epoch,
+    callbacks=[
+        model_checkpoint_callback,
+        early_stopping_callback,
+        reduce_lr_callback,
+        csv_logger_callback
+    ]
+)
+print("Model training finished.")
+
+
+
+--- Cell 26 (Code) ---
+
+# Load the best saved model
+checkpoint_dir = "C:/projects/final_year_project/model_checkpoints"
+if os.path.exists(checkpoint_dir) and os.listdir(checkpoint_dir):
+    try:
+        best_checkpoint = max([f for f in os.listdir(checkpoint_dir) if f.endswith('.keras')], 
+                             key=lambda x: float(x.split('val_acc')[1].split('_')[0]))
+        model = tf.keras.models.load_model(os.path.join(checkpoint_dir, best_checkpoint))
+        print(f"Loaded best model from: {os.path.join(checkpoint_dir, best_checkpoint)}")
+        model.summary()
+    except (ValueError, IndexError) as e:
+        print(f"Error parsing checkpoint filenames: {e}. Please check file naming convention.")
+    except FileNotFoundError:
+     print(f"Checkpoint directory {checkpoint_dir} not found.")
+    else:
+     print("No checkpoints found in the directory.")
+
+
+
+--- Cell 27 (Code) ---
+
+import os
+checkpoint_dir = "C:/projects/final_year_project/model_checkpoints"
+if os.path.exists(checkpoint_dir):
+    print("Directory exists. Contents:", os.listdir(checkpoint_dir))
+else:
+    print(f"Directory {checkpoint_dir} does not exist.")
+
+
+
+--- Cell 28 (Code) ---
+
+checkpoint_dir = "C:/projects/final_year_project/model_checkpoints"
+
+best_checkpoint = max(
+    [f for f in os.listdir(checkpoint_dir) if f.endswith('.keras')],
+    key=lambda x: float(x.split('val_acc_')[1].split('_')[0])
+)
+
+model = tf.keras.models.load_model(os.path.join(checkpoint_dir, best_checkpoint))
+print(f"Loaded best model from: {os.path.join(checkpoint_dir, best_checkpoint)}")
+model.summary()
+
+
+
+--- Cell 29 (Code) ---
+
+print("\nEvaluating model on test dataset...")
+scores = model.evaluate(test_ds, verbose=1)
+print(f"Test Loss: {scores[0]:.4f}")
+print(f"Test Accuracy: {scores[1]*100:.2f}%")
+
+
+
+--- Cell 30 (Code) ---
+
+# --- 12. Plotting the Accuracy and Loss Curves ---
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy']
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+
+plt.figure(figsize=(15, 6))
+
+plt.subplot(1, 2, 1)
+plt.plot(range(len(acc)), acc, label='Training Accuracy')
+plt.plot(range(len(acc)), val_acc, label='Validation Accuracy')
+plt.legend(loc='lower right')
+plt.title('Training and Validation Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.grid(True)
+
+plt.subplot(1, 2, 2)
+plt.plot(range(len(loss)), loss, label='Training Loss')
+plt.plot(range(len(loss)), val_loss, label='Validation Loss')
+plt.legend(loc='upper right')
+plt.title('Training and Validation Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+
+
+--- Cell 31 (Code) ---
+
+def predict(model, img_array_single_image):
+    # Expand dimensions to simulate a batch of 1 image
+    img_array_expanded = tf.expand_dims(img_array_single_image, 0)
+
+    predictions = model.predict(img_array_expanded)
+
+    predicted_class = class_names[np.argmax(predictions[0])]
+    confidence = round(100 * (np.max(predictions[0])), 2)
+    return predicted_class, confidence
+
+
+
+--- Cell 32 (Code) ---
+
+plt.figure(figsize=(15, 15))
+for images, labels in test_ds.take(1):  # Take one batch from the test dataset
+    for i in range(min(9, BATCH_SIZE)):  # Iterate through first 9 images (or fewer if batch_size is smaller)
+        ax = plt.subplot(3, 3, i + 1)
+        plt.imshow(images[i].numpy().astype("uint8"))
+
+        # Predict for the current image
+        predicted_class, confidence = predict(model, images[i].numpy())
+        actual_class = class_names[labels[i]]
+
+        plt.title(f"Actual: {actual_class}\nPredicted: {predicted_class}\nConfidence: {confidence}%")
+        plt.axis("off")
+plt.tight_layout()
+plt.show()
+
+
+
+--- Cell 33 (Code) ---
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Load the CSV file saved by CSVLogger
+csv_path = "C:/projects/final_year_project/model_checkpoints/training_log.csv"
+history_df = pd.read_csv(csv_path)
+
+
+
+--- Cell 34 (Code) ---
+
+acc = history_df['accuracy']
+val_acc = history_df['val_accuracy']
+loss = history_df['loss']
+val_loss = history_df['val_loss']
+
+
+
+--- Cell 35 (Code) ---
+
+plt.figure(figsize=(15, 6))
+
+plt.subplot(1, 2, 1)
+plt.plot(range(len(acc)), acc, label='Training Accuracy')
+plt.plot(range(len(acc)), val_acc, label='Validation Accuracy')
+plt.legend(loc='lower right')
+plt.title('Training and Validation Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.grid(True)
+
+plt.subplot(1, 2, 2)
+plt.plot(range(len(loss)), loss, label='Training Loss')
+plt.plot(range(len(loss)), val_loss, label='Validation Loss')
+plt.legend(loc='upper right')
+plt.title('Training and Validation Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+
+
+--- Cell 36 (Code) ---
+
+models_dir = "C:/Users/NANA EKOW BRYAN/fyp"  
+os.makedirs(models_dir, exist_ok=True)
+
+
+
+--- Cell 37 (Code) ---
+
+try:
+    existing_versions = [int(i) for i in os.listdir(models_dir) if i.isdigit()]
+    model_version = max(existing_versions) + 1 if existing_versions else 1
+except FileNotFoundError:  # If the directory doesn't exist yet
+    model_version = 1
+except Exception as e:
+    print(f"Error determining model version, defaulting to 1: {e}")
+    model_version = 1
+
+
+
+--- Cell 38 (Code) ---
+
+model_save_path_tf = os.path.join(models_dir, str(model_version))
+model.export(model_save_path_tf)
+
+
+
+--- Cell 39 (Code) ---
+
+model_save_path_tf = os.path.join(models_dir, f"{model_version}.keras")
+model.save(model_save_path_tf)
+
+
+
+--- Cell 40 (Code) ---
+
+
+
+
