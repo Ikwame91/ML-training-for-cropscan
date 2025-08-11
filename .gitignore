@@ -14,17 +14,21 @@ venv/
 .vscode/
 .idea/
 
-# Data folders (optional, if large)
+# Data folders (large datasets)
 PlantVillage/
+not_a_crop/
 model_checkpoints/
-temp_data/  # replace ambiguous "1/" with something meaningful
 
-# TensorFlow/Keras model files
+# TensorFlow/Keras model files and directories
 *.h5
 *.keras
 *.tflite
 *.pb
 *.ckpt
+*/saved_model.pb
+*/variables/
+*/assets/
+1/  # SavedModel directory
 
 # Keep specific model file if needed
 !converted_model.tflite
@@ -44,3 +48,15 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+
+# Machine Learning specific
+*.csv  # training logs, but be careful if you have important data CSVs
+training_log.csv
+experiments/
+runs/
+wandb/
+
+# Temporary files
+temp/
+tmp/
+*.tmp
